@@ -80,6 +80,8 @@ import static io.strimzi.test.TestUtils.toYamlString;
 @SuppressWarnings({"checkstyle:ClassDataAbstractionCoupling", "checkstyle:ClassFanOutComplexity"})
 public class Resources extends AbstractResources {
 
+    private static final Environment ENVIRONMENT = Environment.getInstance();
+
     private static final Logger LOGGER = LogManager.getLogger(Resources.class);
     private static final long POLL_INTERVAL_FOR_RESOURCE_CREATION = Duration.ofSeconds(3).toMillis();
     public static final long POLL_INTERVAL_FOR_RESOURCE_READINESS = Duration.ofSeconds(1).toMillis();
@@ -88,7 +90,7 @@ public class Resources extends AbstractResources {
     private static final long TIMEOUT_FOR_DEPLOYMENT_CONFIG_READINESS = Duration.ofMinutes(7).toMillis();
     private static final long TIMEOUT_FOR_RESOURCE_CREATION = Duration.ofMinutes(5).toMillis();
     public static final long TIMEOUT_FOR_RESOURCE_READINESS = Duration.ofMinutes(7).toMillis();
-    private static final String KAFKA_VERSION = System.getenv().getOrDefault("ST_KAFKA_VERSION", "2.1.1");
+    private static final String KAFKA_VERSION = ENVIRONMENT.getStKafkaVersionEnv();
 
     public static final String STRIMZI_PATH_TO_CO_CONFIG = "../install/cluster-operator/050-Deployment-strimzi-cluster-operator.yaml";
     public static final String STRIMZI_DEPLOYMENT_NAME = "strimzi-cluster-operator";
@@ -99,8 +101,6 @@ public class Resources extends AbstractResources {
     public static final String SERVICE = "Service";
     public static final String INGRESS = "Ingress";
     public static final String CLUSTER_ROLE_BINDING = "ClusterRoleBinding";
-
-    protected static final Environment ENVIRONMENT = Environment.getInstance();
 
     Resources(NamespacedKubernetesClient client) {
         super(client);
@@ -655,7 +655,7 @@ public class Resources extends AbstractResources {
         for (EnvVar envVar : envVars) {
             switch (envVar.getName()) {
                 case "STRIMZI_LOG_LEVEL":
-                    envVar.setValue(System.getenv().getOrDefault("TEST_STRIMZI_LOG_LEVEL", STRIMZI_DEFAULT_LOG_LEVEL));
+                    envVar.setValue(ENVIRONMENT.getStrimziLogLevel());
                     break;
                 case "STRIMZI_NAMESPACE":
                     envVar.setValue(namespace);
