@@ -275,25 +275,6 @@ class ConnectST extends AbstractST {
 
     @AfterAll
     void teardownEnvironment() {
-        LOGGER.info("Collecting events in namespace {}", NAMESPACE);
-        String events = KUBE_CLIENT.getEvents();
-        // Write events to file
-        LOGGER.info("Events: {}", events);
-
-        CLIENT.pods().list().getItems().forEach(pod -> {
-            String podName = pod.getMetadata().getName();
-            if (podName.contains("strimzi")) {
-                pod.getStatus().getContainerStatuses().forEach(containerStatus -> {
-                    String log = CLIENT.pods().withName(podName).inContainer(containerStatus.getName()).getLog();
-                    // Write logs from containers to files
-                    LOGGER.info("Operator log: {}", log);
-                });
-            }
-        });
-
-        String log = CLIENT.pods().withName("connect-tests-kafka-0").inContainer("kafka").getLog();
-        LOGGER.info("Kafka log: {}", log);
-
         testClassResources.deleteResources();
         teardownEnvForOperator();
     }

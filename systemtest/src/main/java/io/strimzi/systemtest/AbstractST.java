@@ -457,7 +457,6 @@ public abstract class AbstractST extends BaseITST implements TestSeparator {
     }
 
     protected void deleteResources() throws Exception {
-        LOGGER.info("Deleting resources after the test");
         collectLogs();
         resources.deleteResources();
         resources = null;
