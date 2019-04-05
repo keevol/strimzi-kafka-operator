@@ -29,6 +29,7 @@ import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConfigsResult;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.CreatePartitionsResult;
@@ -55,6 +56,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BooleanSupplier;
@@ -145,9 +147,27 @@ public class TopicOperatorIT extends BaseITST {
             }
         } while (true);
 
+        Properties p = new Properties();
+        p.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaCluster.brokerList());
+        adminClient = AdminClient.create(p);
+
         kubeClient = CLIENT.inNamespace(NAMESPACE);
         Crds.registerCustomKinds();
         LOGGER.info("Using namespace {}", NAMESPACE);
+        startTopicOperator(context);
+
+        // We can't delete events, so record the events which exist at the start of the test
+        // and then waitForEvents() can ignore those
+        preExistingEvents = kubeClient.events().inNamespace(NAMESPACE).withLabels(labels.labels()).list().
+                getItems().stream().
+                map(evt -> evt.getMetadata().getUid()).
+                collect(Collectors.toSet());
+
+        LOGGER.info("Finished setting up test");
+    }
+
+    void startTopicOperator(TestContext context) {
+        LOGGER.info("Starting Topic Operator");
         Map<String, String> m = new HashMap();
         m.put(Config.KAFKA_BOOTSTRAP_SERVERS.key, kafkaCluster.brokerList());
         m.put(Config.ZOOKEEPER_CONNECT.key, "localhost:" + zkPort(kafkaCluster));
@@ -160,7 +180,6 @@ public class TopicOperatorIT extends BaseITST {
         vertx.deployVerticle(session, ar -> {
             if (ar.succeeded()) {
                 deploymentId = ar.result();
-                adminClient = session.adminClient;
                 topicsConfigWatcher = session.topicConfigsWatcher;
                 topicWatcher = session.topicWatcher;
                 topicsWatcher = session.topicsWatcher;
@@ -171,19 +190,10 @@ public class TopicOperatorIT extends BaseITST {
             }
         });
         async.await();
-
         waitFor(context, () -> this.topicWatcher.started(), timeout, "Topic watcher not started");
         waitFor(context, () -> this.topicsConfigWatcher.started(), timeout, "Topic configs watcher not started");
         waitFor(context, () -> this.topicWatcher.started(), timeout, "Topic watcher not started");
-
-        // We can't delete events, so record the events which exist at the start of the test
-        // and then waitForEvents() can ignore those
-        preExistingEvents = kubeClient.events().inNamespace(NAMESPACE).withLabels(labels.labels()).list().
-                getItems().stream().
-                map(evt -> evt.getMetadata().getUid()).
-                collect(Collectors.toSet());
-
-        LOGGER.info("Finished setting up test");
+        LOGGER.info("Started Topic Operator");
     }
 
     private static int zkPort(KafkaCluster cluster) {
@@ -206,11 +216,22 @@ public class TopicOperatorIT extends BaseITST {
             operation().inNamespace(NAMESPACE).delete();
         }
 
+        stopTopicOperator(context);
+
+        adminClient.close();
+        if (kafkaCluster != null) {
+            kafkaCluster.shutdown();
+        }
+        Runtime.getRuntime().removeShutdownHook(kafkaHook);
+        LOGGER.info("Finished tearing down test");
+    }
+
+    void stopTopicOperator(TestContext context) {
+        LOGGER.info("Stopping Topic Operator");
         Async async = context.async();
         if (deploymentId != null) {
             vertx.undeploy(deploymentId, ar -> {
                 deploymentId = null;
-                adminClient = null;
                 topicsConfigWatcher = null;
                 topicWatcher = null;
                 topicsWatcher = null;
@@ -222,11 +243,7 @@ public class TopicOperatorIT extends BaseITST {
             });
         }
         async.await();
-        if (kafkaCluster != null) {
-            kafkaCluster.shutdown();
-        }
-        Runtime.getRuntime().removeShutdownHook(kafkaHook);
-        LOGGER.info("Finished tearing down test");
+        LOGGER.info("Stopped Topic Operator");
     }
 
 
@@ -236,20 +253,7 @@ public class TopicOperatorIT extends BaseITST {
         operation().inNamespace(NAMESPACE).create(topicResource);
 
         // Wait for the topic to be created
-        waitFor(context, () -> {
-            try {
-                adminClient.describeTopics(singletonList(topicName)).values().get(topicName).get();
-                return true;
-            } catch (ExecutionException e) {
-                if (e.getCause() instanceof UnknownTopicOrPartitionException) {
-                    return false;
-                } else {
-                    throw new RuntimeException(e);
-                }
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-        }, timeout, "Expected topic to be created by now");
+        waitForTopicInKafka(context, topicName);
         return topicResource;
     }
 
@@ -267,14 +271,18 @@ public class TopicOperatorIT extends BaseITST {
         crt.all().get();
 
         // Wait for the resource to be created
+        waitForTopicInKube(context, resourceName);
+
+        LOGGER.info("topic {} has been created", resourceName);
+        return resourceName;
+    }
+
+    private void waitForTopicInKube(TestContext context, String resourceName) {
         waitFor(context, () -> {
             KafkaTopic topic = operation().inNamespace(NAMESPACE).withName(resourceName).get();
             LOGGER.info("Polled topic {} waiting for creation", resourceName);
             return topic != null;
         }, timeout, "Expected the topic to have been created by now");
-
-        LOGGER.info("topic {} has been created", resourceName);
-        return resourceName;
     }
 
     private void alterTopicConfig(TestContext context, String topicName, String resourceName) throws InterruptedException, ExecutionException {
@@ -625,6 +633,10 @@ public class TopicOperatorIT extends BaseITST {
         session.topicOperator.reconcileAllTopics("periodic");
 
         // Wait for the topic to be created
+        waitForTopicInKafka(context, topicName);
+    }
+
+    void waitForTopicInKafka(TestContext context, String topicName) {
         waitFor(context, () -> {
             try {
                 adminClient.describeTopics(singletonList(topicName)).values().get(topicName).get();
@@ -708,4 +720,56 @@ public class TopicOperatorIT extends BaseITST {
         assertEquals("lee", operation().inNamespace(NAMESPACE).withName(topicName).get().getMetadata().getLabels().get("stan"));
         assertEquals("root", operation().inNamespace(NAMESPACE).withName(topicName).get().getMetadata().getLabels().get("iam"));
     }
+
+    /**
+     * Validates that when TO starts it reconciles:
+     * 1. Create topic A in Kube and reconcile
+     * 2. Stop TO
+     * 3. Create topic B in Kafka
+     * 4. Start TO
+     * 5. Verify topics A, B and C exist on both sides
+     */
+    @Test
+    public void testBootReconcile(TestContext testContext) throws ExecutionException, InterruptedException {
+        // 1. Create topic A in Kube and reconcile
+        String topicNameA = "A";
+        {
+            Topic topicA = new Topic.Builder(topicNameA, 1, (short) 1, emptyMap()).build();
+            KafkaTopic topicResourceA = TopicSerialization.toTopicResource(topicA, labels);
+            String resourceNameA = topicResourceA.getMetadata().getName();
+            operation().inNamespace(NAMESPACE).create(topicResourceA);
+            waitForTopicInKafka(testContext, topicNameA);
+        }
+
+        // 2. Stop TO
+        stopTopicOperator(testContext);
+
+        // 3. Create topic B in Kafka, topic C in Kubernetes
+        String topicNameB = "B";
+        {
+            String resourceName = new TopicName(topicNameB).asKubeName().toString();
+            CreateTopicsResult crt = adminClient.createTopics(singletonList(new NewTopic(topicNameB, 1, (short) 1)));
+            crt.all().get();
+        }
+
+        String topicNameC = "C";
+        {
+            Topic topicC = new Topic.Builder(topicNameC, 1, (short) 1, emptyMap()).build();
+            KafkaTopic topicResourceC = TopicSerialization.toTopicResource(topicC, labels);
+            String resourceNameC = topicResourceC.getMetadata().getName();
+            operation().inNamespace(NAMESPACE).create(topicResourceC);
+        }
+
+        // 4. Start TO
+        startTopicOperator(testContext);
+
+        // 5. Verify topics A, B and C exist on both sides
+        waitForTopicInKafka(testContext, topicNameA);
+        waitForTopicInKafka(testContext, topicNameB);
+        waitForTopicInKafka(testContext, topicNameC);
+        waitForTopicInKube(testContext, topicNameA);
+        waitForTopicInKube(testContext, topicNameB);
+        waitForTopicInKube(testContext, topicNameC);
+    }
+
 }
