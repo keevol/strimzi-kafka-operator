@@ -94,7 +94,7 @@ public class TopicOperatorIT extends BaseITST {
             }
         }
     };
-    private final long timeout = 120_000L;
+    private final long timeout = 30_000L;
     private volatile TopicConfigsWatcher topicsConfigWatcher;
     private volatile ZkTopicWatcher topicWatcher;
 
@@ -282,7 +282,7 @@ public class TopicOperatorIT extends BaseITST {
             KafkaTopic topic = operation().inNamespace(NAMESPACE).withName(resourceName).get();
             LOGGER.info("Polled topic {} waiting for creation", resourceName);
             return topic != null;
-        }, timeout, "Expected the topic to have been created by now");
+        }, timeout, "Expected the KafkaTopic '" + resourceName + "' to have been created in Kubernetes by now");
     }
 
     private void alterTopicConfig(TestContext context, String topicName, String resourceName) throws InterruptedException, ExecutionException {
@@ -392,8 +392,13 @@ public class TopicOperatorIT extends BaseITST {
             } else {
                 context.fail(ar.cause());
             }
+        }).setHandler(ar -> {
+            if (ar.failed()) {
+                context.fail(ar.cause());
+            }
+            async.complete();
         });
-        async.await();
+        async.awaitSuccess();
     }
 
     private void waitForEvent(TestContext context, KafkaTopic kafkaTopic, String expectedMessage, TopicOperator.EventType expectedType) {
@@ -650,7 +655,7 @@ public class TopicOperatorIT extends BaseITST {
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
-        }, timeout, "Expected topic to be created by now");
+        }, timeout, "Expected topic '" + topicName + "' to be created in Kafka by now");
     }
 
     // TODO: What happens if we create and then change labels to the resource predicate isn't matched any more
@@ -725,14 +730,14 @@ public class TopicOperatorIT extends BaseITST {
      * Validates that when TO starts it reconciles:
      * 1. Create topic A in Kube and reconcile
      * 2. Stop TO
-     * 3. Create topic B in Kafka
+     * 3. Create topic B in Kafka, topic C in Kube
      * 4. Start TO
      * 5. Verify topics A, B and C exist on both sides
      */
     @Test
     public void testBootReconcile(TestContext testContext) throws ExecutionException, InterruptedException {
         // 1. Create topic A in Kube and reconcile
-        String topicNameA = "A";
+        String topicNameA = "topic-a";
         {
             Topic topicA = new Topic.Builder(topicNameA, 1, (short) 1, emptyMap()).build();
             KafkaTopic topicResourceA = TopicSerialization.toTopicResource(topicA, labels);
@@ -745,14 +750,14 @@ public class TopicOperatorIT extends BaseITST {
         stopTopicOperator(testContext);
 
         // 3. Create topic B in Kafka, topic C in Kubernetes
-        String topicNameB = "B";
+        String topicNameB = "topic-b";
         {
             String resourceName = new TopicName(topicNameB).asKubeName().toString();
             CreateTopicsResult crt = adminClient.createTopics(singletonList(new NewTopic(topicNameB, 1, (short) 1)));
             crt.all().get();
         }
 
-        String topicNameC = "C";
+        String topicNameC = "topic-c";
         {
             Topic topicC = new Topic.Builder(topicNameC, 1, (short) 1, emptyMap()).build();
             KafkaTopic topicResourceC = TopicSerialization.toTopicResource(topicC, labels);
@@ -768,7 +773,7 @@ public class TopicOperatorIT extends BaseITST {
         waitForTopicInKafka(testContext, topicNameB);
         waitForTopicInKafka(testContext, topicNameC);
         waitForTopicInKube(testContext, topicNameA);
-        waitForTopicInKube(testContext, topicNameB);
+        //waitForTopicInKube(testContext, topicNameB);
         waitForTopicInKube(testContext, topicNameC);
     }
 
