@@ -21,8 +21,6 @@ import io.strimzi.api.kafka.model.listener.KafkaListenerAuthenticationScramSha51
 import io.strimzi.api.kafka.model.listener.KafkaListenerAuthenticationTls;
 import io.strimzi.api.kafka.model.listener.KafkaListenerPlain;
 import io.strimzi.api.kafka.model.listener.KafkaListenerTls;
-import io.strimzi.systemtest.kafkaclients.verifiable.VerifiableConsumer;
-import io.strimzi.systemtest.kafkaclients.verifiable.VerifiableProducer;
 import io.strimzi.systemtest.utils.StUtils;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.annotations.OpenShiftOnly;
@@ -391,7 +389,7 @@ class KafkaST extends MessagingBaseST {
 
         resources().deployKafkaClients(CLUSTER_NAME).done();
 
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, CLUSTER_NAME, false, topicName, null);
+        availabilityTest(messagesCount, 60000, CLUSTER_NAME, false, topicName, null);
     }
 
     /**
@@ -424,7 +422,7 @@ class KafkaST extends MessagingBaseST {
         waitTillSecretExists(kafkaUser);
 
         resources().deployKafkaClients(true, CLUSTER_NAME, user).done();
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, CLUSTER_NAME, true, topicName, user);
+        availabilityTest(messagesCount, 60000, CLUSTER_NAME, true, topicName, user);
     }
 
     /**
@@ -468,7 +466,7 @@ class KafkaST extends MessagingBaseST {
         }
 
         resources().deployKafkaClients(false, CLUSTER_NAME, user).done();
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, CLUSTER_NAME, false, topicName, user);
+        availabilityTest(messagesCount, 60000, CLUSTER_NAME, false, topicName, user);
     }
 
     /**
@@ -498,7 +496,7 @@ class KafkaST extends MessagingBaseST {
         waitTillSecretExists(kafkaUser);
 
         resources().deployKafkaClients(true, CLUSTER_NAME, user).done();
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 180000, CLUSTER_NAME, true, topicName, user);
+        availabilityTest(messagesCount, 180000, CLUSTER_NAME, true, topicName, user);
     }
 
     @Test
@@ -772,8 +770,8 @@ class KafkaST extends MessagingBaseST {
         resources().deployKafkaClients(CLUSTER_NAME).done();
 
         // Check brokers availability
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, kafkaSourceName);
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, kafkaTargetName);
+        availabilityTest(messagesCount, 60000, kafkaSourceName);
+        availabilityTest(messagesCount, 60000, kafkaTargetName);
 
         // Deploy Mirror Maker
         resources().kafkaMirrorMaker(CLUSTER_NAME, kafkaSourceName, kafkaTargetName, "my-group", 1, false).done();
@@ -784,9 +782,9 @@ class KafkaST extends MessagingBaseST {
             !KUBE_CLIENT.searchInLog("deploy", "my-cluster-mirror-maker", TimeMeasuringSystem.getDurationInSecconds(testClass, testName, operationID),  "\"Successfully joined group\"").isEmpty()
         );
 
-        int sent = sendMessages(new VerifiableProducer(), messagesCount, 20000, kafkaSourceName, false, topicSourceName, null);
-        int receivedSource = receiveMessages(new VerifiableConsumer(), messagesCount, 60000, kafkaSourceName, false, topicSourceName, null);
-        int receivedTarget = receiveMessages(new VerifiableConsumer(), messagesCount, 60000, kafkaTargetName, false, topicSourceName, null);
+        int sent = sendMessages(messagesCount, 20000, kafkaSourceName, false, topicSourceName, null);
+        int receivedSource = receiveMessages(messagesCount, 60000, kafkaSourceName, false, topicSourceName, null);
+        int receivedTarget = receiveMessages(messagesCount, 60000, kafkaTargetName, false, topicSourceName, null);
 
         assertSentAndReceivedMessages(sent, receivedSource);
         assertSentAndReceivedMessages(sent, receivedTarget);
@@ -857,8 +855,8 @@ class KafkaST extends MessagingBaseST {
         resources().deployKafkaClients(true, CLUSTER_NAME, userSource, userTarget).done();
 
         // Check brokers availability
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, kafkaClusterSourceName, true, "my-topic-test-1", userSource);
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, kafkaClusterTargetName, true, "my-topic-test-2", userTarget);
+        availabilityTest(messagesCount, 60000, kafkaClusterSourceName, true, "my-topic-test-1", userSource);
+        availabilityTest(messagesCount, 60000, kafkaClusterTargetName, true, "my-topic-test-2", userTarget);
 
         // Deploy Mirror Maker with tls listener and mutual tls auth
         resources().kafkaMirrorMaker(CLUSTER_NAME, kafkaClusterSourceName, kafkaClusterTargetName, "my-group", 1, true)
@@ -882,9 +880,9 @@ class KafkaST extends MessagingBaseST {
             !KUBE_CLIENT.searchInLog("deploy", CLUSTER_NAME + "-mirror-maker", TimeMeasuringSystem.getDurationInSecconds(testClass, testName, operationID),  "\"Successfully joined group\"").isEmpty()
         );
 
-        int sent = sendMessages(new VerifiableProducer(), messagesCount, 20000, kafkaClusterSourceName, true, topicSourceName, userSource);
-        int receivedSource = receiveMessages(new VerifiableConsumer(), messagesCount, 60000, kafkaClusterSourceName, true, topicSourceName, userSource);
-        int receivedTarget = receiveMessages(new VerifiableConsumer(), messagesCount, 60000, kafkaClusterTargetName, true, topicSourceName, userTarget);
+        int sent = sendMessages(messagesCount, 20000, kafkaClusterSourceName, true, topicSourceName, userSource);
+        int receivedSource = receiveMessages(messagesCount, 60000, kafkaClusterSourceName, true, topicSourceName, userSource);
+        int receivedTarget = receiveMessages(messagesCount, 60000, kafkaClusterTargetName, true, topicSourceName, userTarget);
 
         assertSentAndReceivedMessages(sent, receivedSource);
         assertSentAndReceivedMessages(sent, receivedTarget);
@@ -956,8 +954,8 @@ class KafkaST extends MessagingBaseST {
         resources().deployKafkaClients(true, CLUSTER_NAME, userSource, userTarget).done();
 
         // Check brokers availability
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, kafkaSourceName, true, "my-topic-test-1", userSource);
-        availabilityTest(new VerifiableProducer(), new VerifiableConsumer(), messagesCount, 60000, kafkaTargetName, true, "my-topic-test-2", userTarget);
+        availabilityTest(messagesCount, 60000, kafkaSourceName, true, "my-topic-test-1", userSource);
+        availabilityTest(messagesCount, 60000, kafkaTargetName, true, "my-topic-test-2", userTarget);
 
         // Deploy Mirror Maker with TLS and ScramSha512
         resources().kafkaMirrorMaker(CLUSTER_NAME, kafkaSourceName, kafkaTargetName, "my-group", 1, true)
@@ -991,9 +989,9 @@ class KafkaST extends MessagingBaseST {
             !KUBE_CLIENT.searchInLog("deploy", CLUSTER_NAME + "-mirror-maker", TimeMeasuringSystem.getDurationInSecconds(testClass, testName, operationID),  "\"Successfully joined group\"").isEmpty()
         );
 
-        int sent = sendMessages(new VerifiableProducer(), messagesCount, 20000, kafkaSourceName, true, topicName, userSource);
-        int receivedSource = receiveMessages(new VerifiableConsumer(), messagesCount, 60000, kafkaSourceName, true, topicName, userSource);
-        int receivedTarget = receiveMessages(new VerifiableConsumer(), messagesCount, 60000, kafkaTargetName, true, topicName, userTarget);
+        int sent = sendMessages(messagesCount, 20000, kafkaSourceName, true, topicName, userSource);
+        int receivedSource = receiveMessages(messagesCount, 60000, kafkaSourceName, true, topicName, userSource);
+        int receivedTarget = receiveMessages(messagesCount, 60000, kafkaTargetName, true, topicName, userTarget);
 
         assertSentAndReceivedMessages(sent, receivedSource);
         assertSentAndReceivedMessages(sent, receivedTarget);
