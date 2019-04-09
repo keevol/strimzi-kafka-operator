@@ -537,11 +537,12 @@ public class TopicOperator {
                     // depending on what the diffs are.
                     LOGGER.debug("Updating KafkaTopic, kafka topic and topicStore");
                     // TODO replace this with compose
-                    TopicDiff diff = TopicDiff.diff(result, kafkaTopic);
+                    TopicDiff diff = TopicDiff.diff(k8sTopic, result);
                     if (diff.isEmpty()) {
+                        LOGGER.debug("No need to update KafkaTopic with {}", diff);
                         enqueue(updateTopicStoreAndKafka(involvedObject, reconciliationResultHandler, merged, result, partitionsDelta));
                     } else {
-                        LOGGER.debug("Updating Kafka with {}", diff);
+                        LOGGER.debug("Updating KafkaTopic with {}", diff);
                         UpdateResource event = new UpdateResource(result, ar -> {
                             enqueue(updateTopicStoreAndKafka(involvedObject, reconciliationResultHandler, merged, result, partitionsDelta));
                         });
