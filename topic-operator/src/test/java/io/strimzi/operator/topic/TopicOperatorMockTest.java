@@ -60,9 +60,15 @@ public class TopicOperatorMockTest {
 
     @After
     public void tearDown() {
-        vertx.undeploy(deploymentId);
-        adminClient.close();
-        kafkaCluster.shutdown();
+        if (vertx != null && deploymentId != null) {
+            vertx.undeploy(deploymentId);
+        }
+        if (adminClient != null) {
+            adminClient.close();
+        }
+        if (kafkaCluster != null) {
+            kafkaCluster.shutdown();
+        }
     }
 
     @Before
