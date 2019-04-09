@@ -727,17 +727,17 @@ public class TopicOperatorIT extends BaseITST {
     }
 
     /**
-     * Validates that when TO starts it reconciles:
+     * Validates that when TO starts it reconciles properly based on what's been previously observed
      * 1. Create topic A in Kube and reconcile
      * 2. Stop TO
-     * 3. Create topic B in Kafka, topic C in Kube
+     * 3. Create topic X in Kafka, topic Y in Kube
      * 4. Start TO
-     * 5. Verify topics A, B and C exist on both sides
+     * 5. Verify topics A, X and Y exist on both sides
      */
     @Test
     public void testBootReconcile(TestContext testContext) throws ExecutionException, InterruptedException {
         // 1. Create topic A in Kube and reconcile
-        String topicNameA = "topic-a";
+        /*String topicNameA = "topic-a";
         {
             Topic topicA = new Topic.Builder(topicNameA, 1, (short) 1, emptyMap()).build();
             KafkaTopic topicResourceA = TopicSerialization.toTopicResource(topicA, labels);
@@ -745,36 +745,62 @@ public class TopicOperatorIT extends BaseITST {
             operation().inNamespace(NAMESPACE).create(topicResourceA);
             waitForTopicInKafka(testContext, topicNameA);
         }
-
-        // 2. Stop TO
-        stopTopicOperator(testContext);
-
-        // 3. Create topic B in Kafka, topic C in Kubernetes
         String topicNameB = "topic-b";
         {
-            String resourceName = new TopicName(topicNameB).asKubeName().toString();
-            CreateTopicsResult crt = adminClient.createTopics(singletonList(new NewTopic(topicNameB, 1, (short) 1)));
-            crt.all().get();
+            Topic topicB = new Topic.Builder(topicNameB, 1, (short) 1, emptyMap()).build();
+            KafkaTopic topicResourceB = TopicSerialization.toTopicResource(topicB, labels);
+            String resourceNameB = topicResourceB.getMetadata().getName();
+            operation().inNamespace(NAMESPACE).create(topicResourceB);
+            waitForTopicInKafka(testContext, topicNameB);
         }
-
         String topicNameC = "topic-c";
         {
             Topic topicC = new Topic.Builder(topicNameC, 1, (short) 1, emptyMap()).build();
             KafkaTopic topicResourceC = TopicSerialization.toTopicResource(topicC, labels);
             String resourceNameC = topicResourceC.getMetadata().getName();
             operation().inNamespace(NAMESPACE).create(topicResourceC);
+            waitForTopicInKafka(testContext, topicNameC);
+        }*/
+
+        // 2. Stop TO
+        stopTopicOperator(testContext);
+
+        // 3. Modify topic A TODO
+
+        // 3. Delete topic B in Kafka, delete topic C in Kubernetes TODO
+
+        // 3. Create topic X in Kafka, topic Y in Kubernetes
+        /*String topicNameX = "topic-x";
+        {
+            String resourceName = new TopicName(topicNameX).asKubeName().toString();
+            CreateTopicsResult crt = adminClient.createTopics(singletonList(new NewTopic(topicNameX, 1, (short) 1)));
+            crt.all().get();
+        }*/
+
+        String topicNameY = "topic-y";
+        {
+            Topic topicY = new Topic.Builder(topicNameY, 1, (short) 1, emptyMap()).build();
+            KafkaTopic topicResourceY = TopicSerialization.toTopicResource(topicY, labels);
+            String resourceNameY = topicResourceY.getMetadata().getName();
+            operation().inNamespace(NAMESPACE).create(topicResourceY);
         }
 
         // 4. Start TO
         startTopicOperator(testContext);
 
-        // 5. Verify topics A, B and C exist on both sides
-        waitForTopicInKafka(testContext, topicNameA);
-        waitForTopicInKafka(testContext, topicNameB);
-        waitForTopicInKafka(testContext, topicNameC);
-        waitForTopicInKube(testContext, topicNameA);
-        //waitForTopicInKube(testContext, topicNameB);
-        waitForTopicInKube(testContext, topicNameC);
+        // 5. Verify topics A, X and Y exist on both sides
+        //waitForTopicInKafka(testContext, topicNameA);
+        //waitForTopicInKafka(testContext, topicNameX);
+        waitForTopicInKafka(testContext, topicNameY);
+        //waitForTopicInKube(testContext, topicNameA);
+        //waitForTopicInKube(testContext, topicNameX);
+        waitForTopicInKube(testContext, topicNameY);
+
+        // 5. Verify topics B and C deleted on both sides TODO
+
+        // 5. Verify topic A was changed. TODO
+
+        Thread.sleep(5_000);
     }
 
 }

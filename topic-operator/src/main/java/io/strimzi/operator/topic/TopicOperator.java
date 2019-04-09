@@ -537,25 +537,38 @@ public class TopicOperator {
                     // depending on what the diffs are.
                     LOGGER.debug("Updating KafkaTopic, kafka topic and topicStore");
                     // TODO replace this with compose
-                    enqueue(new UpdateResource(result, ar -> {
-                        Handler<Void> topicStoreHandler =
-                            ignored -> enqueue(new UpdateInTopicStore(
-                                result, involvedObject, reconciliationResultHandler));
-                        Handler<Void> partitionsHandler;
-                        if (partitionsDelta > 0) {
-                            partitionsHandler = ar4 -> enqueue(new IncreaseKafkaPartitions(result, involvedObject, ar2 -> topicStoreHandler.handle(null)));
-                        } else {
-                            partitionsHandler = topicStoreHandler;
-                        }
-                        if (merged.changesConfig()) {
-                            enqueue(new UpdateKafkaConfig(result, involvedObject, ar2 -> partitionsHandler.handle(null)));
-                        } else {
-                            enqueue(partitionsHandler);
-                        }
-                    }));
+                    TopicDiff diff = TopicDiff.diff(result, kafkaTopic);
+                    if (diff.isEmpty()) {
+                        enqueue(updateTopicStoreAndKafka(involvedObject, reconciliationResultHandler, merged, result, partitionsDelta));
+                    } else {
+                        LOGGER.debug("Updating Kafka with {}", diff);
+                        UpdateResource event = new UpdateResource(result, ar -> {
+                            enqueue(updateTopicStoreAndKafka(involvedObject, reconciliationResultHandler, merged, result, partitionsDelta));
+                        });
+                        enqueue(event);
+                    }
                 }
             }
         }
+    }
+
+    private Handler<Void> updateTopicStoreAndKafka(HasMetadata involvedObject, Handler<AsyncResult<Void>> reconciliationResultHandler, TopicDiff merged, Topic topic, int partitionsDelta) {
+        Handler<Void> topicStoreHandler =
+            ignored -> enqueue(new UpdateInTopicStore(topic, involvedObject, reconciliationResultHandler));
+        Handler<Void> partitionsHandler;
+        if (partitionsDelta > 0) {
+            partitionsHandler = ar4 -> enqueue(new IncreaseKafkaPartitions(topic, involvedObject, ar2 -> topicStoreHandler.handle(null)));
+        } else {
+            partitionsHandler = topicStoreHandler;
+        }
+
+        Handler<Void> result;
+        if (merged.changesConfig()) {
+            result = new UpdateKafkaConfig(topic, involvedObject, ar2 -> partitionsHandler.handle(null));
+        } else {
+            result = partitionsHandler;
+        }
+        return result;
     }
 
     void enqueue(Handler<Void> event) {
@@ -967,6 +980,7 @@ public class TopicOperator {
                     }));
                 } else {
                     // Topic exists in kube, but not in Kafka
+                    LOGGER.debug("Topic {} exists in Kafka, but not Kubernetes", topicName, logTopic(kt));
                     futs.add(reconcileWithKubeTopic(reconciliationType, kt, topic).compose(r -> {
                         // if success then add to success
                         reconcileState.succeeded.add(topicName);
@@ -978,9 +992,10 @@ public class TopicOperator {
                 for (Future ts : reconcileState.failed) {
                     futs.add(ts);
                 }
-                // anything left in undetermined doesn't exist in topic store not kube -> delete it in kafka
+                // anything left in undetermined doesn't exist in topic store nor kube -> delete it in kafka
                 for (TopicName tn : reconcileState.undetermined) {
                     Future f = Future.future();
+                    LOGGER.debug("Topic {} from undetermined does not exist in Kubernetes => delete", tn);
                     kafka.deleteTopic(tn, f.completer());
                     futs.add(f);
                 }
@@ -1008,12 +1023,19 @@ public class TopicOperator {
                 topicStore.read(topicName, tsr -> {
                     if (tsr.failed()) {
                         failed.add(Future.failedFuture(
-                            new OperatorException("Error getting KafkaTopic " + topicName + " during " + reconciliationType + " reconciliation", tsr.cause())));
+                                new OperatorException("Error getting KafkaTopic " + topicName + " during "
+                                        + reconciliationType + " reconciliation", tsr.cause())));
                     } else if (tsr.result() == null) {
                         undetermined.add(topicName);
                     } else {
-                        reconcileWithPrivateTopic(reconciliationType, topicName, tsr.result());
-                        succeeded.add(topicName);
+                        LOGGER.debug("Have private topic for topic {} in Kafka", topicName);
+                        reconcileWithPrivateTopic(reconciliationType, topicName, tsr.result()).setHandler(ar -> {
+                            if (ar.succeeded()) {
+                                succeeded.add(topicName);
+                            } else {
+                                failed.add(Future.failedFuture(ar.cause()));
+                            }
+                        });
                     }
                     countDownLatch.countDown();
                     if (countDownLatch.getCount() == 0) {
@@ -1026,12 +1048,13 @@ public class TopicOperator {
         }
 
         return topicFutures;
+    }
 
     /**
      * Reconcile the given topic which has the given {@code privateTopic} in the topic store.
      */
-    private Future<Boolean> reconcileWithPrivateTopic(String reconciliationType, TopicName topicName, Topic privateTopic) {
-        Future<Boolean> topicFuture = Future.future();
+    private Future<Void> reconcileWithPrivateTopic(String reconciliationType, TopicName topicName, Topic privateTopic) {
+        Future<Void> topicFuture = Future.future();
 
         ResourceName kubeName = privateTopic.getResourceName();
         k8s.getFromName(kubeName, topicResult -> {
@@ -1073,7 +1096,7 @@ public class TopicOperator {
                 inFlight.enqueue(topicName, action, result);
                 result.setHandler(ar -> {
                     if (ar.succeeded()) {
-                        topicFuture.complete(Boolean.TRUE);
+                        topicFuture.complete();
                     } else {
                         topicFuture.fail(ar.cause());
                     }
