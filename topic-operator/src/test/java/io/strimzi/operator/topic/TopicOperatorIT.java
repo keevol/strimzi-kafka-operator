@@ -39,6 +39,7 @@ import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidReplicationFactorException;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -535,7 +536,8 @@ public class TopicOperatorIT extends BaseITST {
                 adminClient.describeTopics(singletonList(topicName)).values().get(topicName).get();
                 return false;
             } catch (ExecutionException e) {
-                if (e.getCause() instanceof UnknownTopicOrPartitionException) {
+                if (e.getCause() instanceof UnknownTopicOrPartitionException
+                        || e.getCause() instanceof InvalidTopicException) {
                     return true;
                 } else {
                     throw new RuntimeException(e);
@@ -682,7 +684,8 @@ public class TopicOperatorIT extends BaseITST {
                 adminClient.describeTopics(singletonList(topicName)).values().get(topicName).get();
                 return exist;
             } catch (ExecutionException e) {
-                if (e.getCause() instanceof UnknownTopicOrPartitionException) {
+                if (e.getCause() instanceof UnknownTopicOrPartitionException
+                        || e.getCause() instanceof InvalidTopicException) {
                     return !exist;
                 } else {
                     throw new RuntimeException(e);
