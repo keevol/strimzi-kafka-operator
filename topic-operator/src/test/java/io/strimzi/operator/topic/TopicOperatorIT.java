@@ -215,7 +215,12 @@ public class TopicOperatorIT extends BaseITST {
         LOGGER.info("Tearing down test");
 
         if (kubeClient != null) {
+            List<KafkaTopic> items = operation().inNamespace(NAMESPACE).list().getItems();
             operation().inNamespace(NAMESPACE).delete();
+            // Wait for the operator to delete all the existing topics in Kafka
+            for (KafkaTopic item : items) {
+                waitForTopicInKafka(context, new TopicName(item).toString(), false);
+            }
         }
 
         stopTopicOperator(context);
